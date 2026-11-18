@@ -1,6 +1,6 @@
 # GCS 物流搬运机器人 — 智能物流搬运赛项
 
-面向**智能物流搬运赛项**的双端机器人系统：**STM32F407 下位机固件** + **RDK X5 上位机视觉**。
+面向 **2026 年广东省大学生工创大赛 · 智能物流搬运赛项**的双端机器人系统：**STM32F407 下位机固件** + **RDK X5 上位机视觉**。
 
 整车由两块计算单元协同工作：
 
@@ -88,10 +88,10 @@ gongchuang_car/
 | --- | --- | --- | --- | --- |
 | 上位机通信 | USART1 | PA9 / PA10 | 115200 8N1 | 9 字节帧协议（`HOST_UART`） |
 | 调试终端 | UART5 | PC12 / PD2 | 115200 8N1 | 单字符命令 + 可读日志（`DBG_UART`） |
-| 备用串口 | USART2 | PD5 / PD6 | 115200 8N1 | 预留 |
-| 备用串口 | USART6 | PC6 / PC7 | 9600 8N1 | 预留 |
-| 电机总线 | CAN1 | PA11(RX) / PA12(TX) | 500 kbps（Prescaler 7, BS1 9TQ, BS2 2TQ） | ZDT 闭环步进 ×4 |
-| 舵机 PWM | TIM2 CH2/CH3/CH4 | PA1 / PA2 / PA3 | 50 Hz（Prescaler 83, Period 19999） | 圆台 / 物块盘 / 爪 |
+| IMU 通信 | USART2 | PD5 / PD6 | 115200 8N1 | WitMotion 姿态传感器（WIT SDK） |
+| 串口屏 | USART6 | PC6 / PC7 | 9600 8N1 | 串口显示屏 |
+| 电机总线 | CAN1 | PA11(RX) / PA12(TX) | 500 kbps（Prescaler 7, BS1 9TQ, BS2 2TQ） | ZDT 闭环步进 ×6 |
+| 舵机 PWM | TIM2 CH2/CH3/CH4 | PA1 / PA2 / PA3 | 50 Hz（Prescaler 83, Period 19999） | CH2 夹爪 / CH3 置物盘 / CH4 云台 |
 | 加热 PWM | TIM3 CH1 | PA6 | 500 Hz（Prescaler 83, Period 1999） | 电加热片 `race_heat_set()` |
 | 控制周期中断 | TIM4 | 内部 | Prescaler 839, Period 4999（≈20 Hz） | PID 节拍 `race_chassis_tim4_callback()` |
 | 辅助定时 | TIM5 | 内部 | Prescaler 839, Period 49999 | 长周期计时 |
@@ -130,10 +130,10 @@ gongchuang_car/
 
 ### 4.2 下位机 ↔ 步进电机（CAN1）
 
-- 物理层：CAN1，500 kbps 标准帧。
-- 应用层：ZDT（张大头）闭环步进协议，封装在 `Core/Src/hal_zdt.c`（使能 / 位置模式 / 速度模式 / 回零 / 状态回读）。
-- 轮电机地址 1–4（对应四个麦克纳姆轮），升降与平推为独立地址的直线执行机构。
-- 收到 CAN 帧后在中断里入环形缓冲（`race_chassis_can_rx_callback`），主循环弹出处理，避免在 ISR 内做重活。
+- 物理层：CAN1，500 kbps，**扩展帧**；仲裁域 `ExtId = (motor_addr << 8) | pack`，`data[0]` 为命令码。
+- 应用层：ZDT（张大头）闭环步进协议，封装在 `Core/Src/hal_zdt.c`：使能 `0xF3`、速度模式 `0xF6`、位置模式 `0xFD`、急停 `0xFE`、回零等；回读用 `0x27/0x35/0x36/0x3B`（转速 / 相位电流 / 位置状态）。
+- 地址分配：`1–4` 四个麦克纳姆轮，`5` 升降，`6` 平推。
+- 收到 CAN 帧后在中断里入环形缓冲（`race_chassis_can_rx_callback`，深度 16），主循环弹出处理，避免 ISR 内做重活。
 
 ---
 
@@ -143,7 +143,7 @@ gongchuang_car/
 
 - `car_move(v_x, v_y, w)`：底盘速度基元，按麦轮运动学解算四轮转速。
 - `car_move_distance_x/y()`、`car_move_distance()`、`car_move1~4()`：带标定系数的定距移动（前进 / 侧移 / 斜向）。
-- 四轮**速度环**：CAN 回读轮速 → 每轮独立 PID → 下发速度指令（`wheel_speed_pid_*`）。
+- 四轮**速度环**（闭环在 MCU 内实现，非驱动器内）：`zdt_read(addr, ZDT_S_VEL)` 回读轮速 → 每轮独立 PI 修正 → `wheel_speed_pid_command()` → `zdt_vel()` 下发。默认增益 `Kp 0.35 / Ki 0.10 / Kd 0.00`，节拍 50 ms，积分限幅 300、单次修正限幅 80；反馈超过 200 ms 未更新时**自动退化为开环**，避免失速锁死。
 - **航向环**：`PID_move(v_x, v_y, w, time, target_angle, pid_choose)` 以 IMU 角度为反馈闭环锁定朝向，内置 5 组预置参数（见 7 节）。
 - 里程/距离系数在 `car_move_distance_x`（10.5）、`car_move_distance_y`（10.3）中，需按实测校准。
 
@@ -196,6 +196,9 @@ gongchuang_car/
 | 边界线检测 | `detect_boundary_line()` | 场地边界辅助纠偏 |
 | 命令分发 | `class HostSerialCommandHandler` | 串口单字节命令 → 视觉任务 → 9 字节回包 |
 
+- 二维码识别走 **pyzbar 优先、`cv2.QRCodeDetector` 降级**的双通道，并做**连续 3 帧结果一致**才确认，抑制误码。
+- 物块与色环采用 **HoughCircles 粗定位 + HSV `inRange` 颜色判定 + 形态学去噪** 的两阶段策略：先粗定位靠近，再二次"centered"精定位。
+- 三个工位的颜色用**排除法**确定（已知两色反推第三色），降低单一色域误判的影响。
 - 通信口：`GCS_HOST_SERIAL=/dev/ttyUSB0`，`GCS_HOST_BAUD=115200`。
 - 摄像头：`GCS_QR_CAMERA=/dev/video_xia0`、`GCS_UPPER_CAMERA=/dev/video_shang0`，后端 `v4l2`。
 - 支持 `--qr / --ring / --ring-centered / --maduo / --maduo-centered` 单独预览，配合 `--dry-run-serial` 可脱离下位机调试。
@@ -261,6 +264,12 @@ Windows 本机调试用 `run_qr_preview_windows.bat`、`run_ring_preview_windows
 | 航向环预置组 3 | `kp 2.0, ki 0.05, kd 0.4` |
 | 航向环预置组 4 | `kp 2.0, ki 0.07, kd 0.4` |
 | 距离标定系数 | 前进 10.5 / 侧移 10.3（需实测校准） |
+| 升降行程 / 脉冲系数 | 0–60 单位 / 80 脉冲每单位 |
+| 平推行程 / 脉冲系数 | 0–65 单位 / 25.465 脉冲每单位 |
+| CAN 帧格式 | 扩展帧，`ExtId = (addr << 8) OR pack` |
+| 电机地址 | 1–4 四轮 / 5 升降 / 6 平推 |
+| 轮速环增益 | Kp 0.35 / Ki 0.10 / Kd 0.00（节拍 50 ms，反馈超时 200 ms） |
+| 看门狗 | IWDG / WWDG **均未启用**（`hal_conf.h` 中相关宏被注释） |
 | 爪子 开 / 合 | 50° / 25° |
 | 物块盘工位 | 0° / 135° / 270° |
 | 圆台角度偏置 | 7.9° |
@@ -291,6 +300,17 @@ Windows 本机调试用 `run_qr_preview_windows.bat`、`run_ring_preview_windows
 | [教学文档_从零掌握智能物流小车.md](docs/教学文档_从零掌握智能物流小车.md) | 面向新人的系统级教学材料 |
 | [组会汇报_智能物流搬运机器人项目学习总结.md](docs/组会汇报_智能物流搬运机器人项目学习总结.md) | 项目阶段总结与复盘 |
 | [命题/](docs/命题) | 赛题说明与评分标准（PDF） |
+
+---
+
+## 附：已知限制与阅读提示
+
+1. **`motor_ack_test.c`（约 3000 行）与 `chassis_calib.c` 未纳入编译**（`CMakeLists.txt` 的源码清单里没有它们）。因此 [`docs/DEBUG_COMMANDS.md`](docs/DEBUG_COMMANDS.md) 与 [`docs/串口命令参考手册.md`](docs/串口命令参考手册.md) 里 `STATUS` / `ACT` / `PUSH` / `SJ` 一类交互命令，**对当前比赛主固件不生效** —— 它们属于电机测试固件（`motor_test` 分支）的调试入口。
+2. `Core/Inc/chassis_calib.h` 只有函数声明、**没有标定常量**，不要把它当作参数表使用；实际标定值分散在 `race_chassis.c` 的宏与 `docs/调车流程.md` 的记录表里。
+3. `docs/` 下部分文档写于不同开发阶段，个别参数存在互相矛盾（典型如上位机串口波特率被某篇文档写成 9600，而代码与 `.ioc` 均为 115200）。**本 README 一律以源码为准**。
+4. `.ioc` 中 TIM2_CH4 的初始脉宽记为 838，`tim.c` 实际为 1500 —— 以源码为准；重新用 CubeMX 生成代码时注意别被覆盖。
+5. 轮径、轮距、减速比、每圈脉冲数在工程中**没有常量定义**，只有"距离 → 脉冲"的经验系数，换车或换轮后必须重新标定（见 [`docs/调车流程.md`](docs/调车流程.md)）。
+6. `race_task.c` 中的场地距离（910 / 1700 / 1850 mm 等）为**硬编码**，换场地需重新测量调整。
 
 ---
 
