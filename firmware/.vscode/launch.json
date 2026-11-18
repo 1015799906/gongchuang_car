@@ -1,0 +1,54 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "DAPLink 烧录+调试 (wuliu)",
+            "type": "cortex-debug",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "executable": "${workspaceFolder}/build/win-debug/STM32f407_wuliu.elf",
+            "servertype": "openocd",
+            "serverpath": "D:/BaiduNetdiskDownload/OpenOCD-20260302-0.12.0/bin/openocd.exe",
+            "searchDir": [
+                "D:/BaiduNetdiskDownload/OpenOCD-20260302-0.12.0/share/openocd/scripts"
+            ],
+            "configFiles": [
+                "interface/cmsis-dap.cfg",
+                "target/stm32f4x.cfg"
+            ],
+            "openOCDLaunchCommands": [
+                "transport select swd",
+                "adapter speed 4000",
+                "cmsis_dap_backend hid"
+            ],
+            "gdbPath": "C:/Users/10157/AppData/Local/stm32cube/bundles/gnu-tools-for-stm32/14.3.1+st.2/bin/arm-none-eabi-gdb.exe",
+            "runToEntryPoint": "main",
+            "preLaunchTask": "build",
+            "svdFile": ""
+        },
+        {
+            "name": "仅烧录不调试 (wuliu)",
+            "type": "cortex-debug",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "executable": "${workspaceFolder}/build/win-debug/STM32f407_wuliu.elf",
+            "servertype": "openocd",
+            "serverpath": "D:/BaiduNetdiskDownload/OpenOCD-20260302-0.12.0/bin/openocd.exe",
+            "searchDir": [
+                "D:/BaiduNetdiskDownload/OpenOCD-20260302-0.12.0/share/openocd/scripts"
+            ],
+            "configFiles": [
+                "interface/cmsis-dap.cfg",
+                "target/stm32f4x.cfg"
+            ],
+            "openOCDLaunchCommands": [
+                "transport select swd",
+                "adapter speed 4000",
+                "cmsis_dap_backend hid",
+                "program ${workspaceFolder}/build/win-debug/STM32f407_wuliu.elf verify reset exit"
+            ],
+            "gdbPath": "C:/Users/10157/AppData/Local/stm32cube/bundles/gnu-tools-for-stm32/14.3.1+st.2/bin/arm-none-eabi-gdb.exe",
+            "runToEntryPoint": "main"
+        }
+    ]
+}

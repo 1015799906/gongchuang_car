@@ -1,0 +1,55 @@
+# ===== 编译产物 / 构建目录 =====
+build/
+**/build/
+cmake-build-*/
+mx.scratch/
+Debug/
+Release/
+*.elf
+*.bin
+*.hex
+*.map
+*.o
+*.obj
+*.d
+*.su
+compile_commands.json
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# ===== 编辑器 / IDE =====
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.settings/
+*.uvprojx
+*.uvoptx
+*.ioc.bak
+
+# ===== AI / 智能体工具链脚手架（不入库）=====
+.trellis/
+.agents/
+.codex/
+.claude/
+.cursor/
+.runtime/
+.ace-tool/
+
+# ===== 操作系统 =====
+.DS_Store
+**/.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== 临时文件 =====
+*.log
+*.tmp
+*.bak
+*.backup
